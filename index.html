@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jogo da Memória</title>
+<style>
+:root{
+  --bg:#12202b; --panel:#1b2f3e; --card:#f2c14e; --back:#2a4a5e;
+  --ok:#5fd38d; --text:#eef3f6; --muted:#9db3c0;
+}
+*{box-sizing:border-box;margin:0}
+body{
+  min-height:100vh;display:flex;flex-direction:column;align-items:center;
+  gap:20px;padding:24px 16px;background:var(--bg);color:var(--text);
+  font-family:"Trebuchet MS","Segoe UI",sans-serif;
+}
+h1{font-size:clamp(1.6rem,5vw,2.4rem);letter-spacing:.5px}
+.info{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
+.info div{background:var(--panel);padding:10px 18px;border-radius:10px;color:var(--muted)}
+.info strong{color:var(--text);margin-left:6px}
+button{
+  background:var(--card);color:#222;border:0;border-radius:10px;
+  padding:10px 22px;font:inherit;font-weight:700;cursor:pointer;
+}
+button:focus-visible,.card:focus-visible{outline:3px solid #fff;outline-offset:3px}
+#tabuleiro{
+  display:grid;grid-template-columns:repeat(4,1fr);gap:12px;
+  width:min(100%,440px);
+}
+.card{
+  aspect-ratio:1;border:0;padding:0;background:none;perspective:600px;cursor:pointer;
+}
+.face{
+  position:absolute;inset:0;display:grid;place-items:center;border-radius:12px;
+  backface-visibility:hidden;transition:transform .35s;font-size:clamp(1.8rem,9vw,2.8rem);
+}
+.card{position:relative}
+.frente{background:var(--back);border:2px solid #3a6179}
+.verso{background:var(--card);transform:rotateY(180deg)}
+.card.virada .frente{transform:rotateY(180deg)}
+.card.virada .verso{transform:rotateY(0)}
+.card.par .verso{background:var(--ok)}
+#msg{min-height:1.6em;font-weight:700;color:var(--ok);text-align:center}
+@media (prefers-reduced-motion:reduce){.face{transition:none}}
+</style>
+</head>
+<body>
+<h1>Jogo da Memória</h1>
+<div class="info">
+  <div>Jogadas<strong id="jogadas">0</strong></div>
+  <div>Tempo<strong id="tempo">0s</strong></div>
+  <div>Recorde<strong id="recorde">–</strong></div>
+</div>
+<div id="tabuleiro" role="grid" aria-label="Tabuleiro"></div>
+<p id="msg" aria-live="polite"></p>
+<button id="reiniciar">Novo jogo</button>
+
+<script>
+const EMOJIS = ["🌱","🌍","♻️","☀️","💧","🌳","🐝","🌊"];
+const tabuleiro = document.getElementById("tabuleiro");
+const elJogadas = document.getElementById("jogadas");
+const elTempo = document.getElementById("tempo");
+const elRecorde = document.getElementById("recorde");
+const elMsg = document.getElementById("msg");
+
+let primeira = null, trava = false, jogadas = 0, pares = 0;
+let inicio = null, timer = null;
+
+function recordeSalvo(){
+  try { return Number(localStorage.getItem("memoria-recorde")) || null; }
+  catch { return null; }
+}
+function salvarRecorde(v){
+  try { localStorage.setItem("memoria-recorde", v); } catch {}
+}
+function mostrarRecorde(){
+  const r = recordeSalvo();
+  elRecorde.textContent = r ? r + " jogadas" : "–";
+}
+
+function embaralhar(arr){
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function iniciar(){
+  clearInterval(timer);
+  timer = null; inicio = null;
+  primeira = null; trava = false; jogadas = 0; pares = 0;
+  elJogadas.textContent = "0";
+  elTempo.textContent = "0s";
+  elMsg.textContent = "";
+  tabuleiro.innerHTML = "";
+  mostrarRecorde();
+
+  embaralhar([...EMOJIS, ...EMOJIS]).forEach(emoji => {
+    const c = document.createElement("button");
+    c.className = "card";
+    c.dataset.emoji = emoji;
+    c.setAttribute("aria-label", "Carta virada para baixo");
+    c.innerHTML = '<span class="face frente">?</span><span class="face verso">' + emoji + '</span>';
+    c.addEventListener("click", () => virar(c));
+    tabuleiro.appendChild(c);
+  });
+}
+
+function comecarTempo(){
+  inicio = Date.now();
+  timer = setInterval(() => {
+    elTempo.textContent = Math.floor((Date.now() - inicio) / 1000) + "s";
+  }, 500);
+}
+
+function virar(c){
+  if (trava || c.classList.contains("virada")) return;
+  if (!inicio) comecarTempo();
+  c.classList.add("virada");
+  c.setAttribute("aria-label", "Carta " + c.dataset.emoji);
+
+  if (!primeira) { primeira = c; return; }
+
+  jogadas++;
+  elJogadas.textContent = jogadas;
+
+  if (primeira.dataset.emoji === c.dataset.emoji) {
+    primeira.classList.add("par"); c.classList.add("par");
+    primeira = null; pares++;
+    if (pares === EMOJIS.length) vitoria();
+  } else {
+    trava = true;
+    const a = primeira;
+    primeira = null;
+    setTimeout(() => {
+      [a, c].forEach(x => {
+        x.classList.remove("virada");
+        x.setAttribute("aria-label", "Carta virada para baixo");
+      });
+      trava = false;
+    }, 800);
+  }
+}
+
+function vitoria(){
+  clearInterval(timer);
+  const seg = Math.floor((Date.now() - inicio) / 1000);
+  const r = recordeSalvo();
+  let texto = "Você venceu em " + jogadas + " jogadas e " + seg + "s!";
+  if (!r || jogadas < r) { salvarRecorde(jogadas); texto += " Novo recorde!"; }
+  elMsg.textContent = texto;
+  mostrarRecorde();
+}
+
+document.getElementById("reiniciar").addEventListener("click", iniciar);
+iniciar();
+</script>
+</body>
+</html>
